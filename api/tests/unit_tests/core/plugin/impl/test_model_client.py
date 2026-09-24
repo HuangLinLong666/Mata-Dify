@@ -535,6 +535,31 @@ class TestPluginModelClient:
         assert result == [b"hello", b"!"]
         assert [chunk.mime_type for chunk in result] == ["audio/wav", "audio/wav"]
 
+    def test_invoke_tts_uses_detected_wav_type_when_plugin_reports_mp3(self, mocker: MockerFixture):
+        client = PluginModelClient()
+        wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00audio-data"
+        mocker.patch.object(
+            client,
+            "_request_with_plugin_daemon_response_stream",
+            return_value=iter([SimpleNamespace(result=wav.hex(), mime_type="audio/mpeg")]),
+        )
+
+        result = list(
+            client.invoke_tts(
+                tenant_id="tenant-1",
+                user_id="user-1",
+                plugin_id="langgenius/tongyi:0.2.4",
+                provider="langgenius/tongyi/tongyi",
+                model="qwen3-tts-flash",
+                credentials={},
+                content_text="hello",
+                voice="alloy",
+            )
+        )
+
+        assert result == [wav]
+        assert result[0].mime_type == "audio/wav"
+
     def test_invoke_tts_wraps_plugin_daemon_inner_error(self, mocker: MockerFixture):
         client = PluginModelClient()
 

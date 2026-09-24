@@ -1,7 +1,9 @@
 import binascii
+import logging
 from collections.abc import Generator, Sequence
 from typing import IO, Any
 
+from core.base.tts_audio_format import normalize_audio_mime_type, sniff_audio_mime_type
 from core.plugin.entities.plugin_daemon import (
     PluginBasicBooleanResponse,
     PluginDaemonInnerError,
@@ -27,6 +29,7 @@ from graphon.model_runtime.utils.encoders import jsonable_encoder
 
 _POLLING_UNSUPPORTED_INVOKE_ERROR_TYPES = frozenset((NotImplementedError.__name__,))
 _POLLING_UNSUPPORTED_ERROR_MESSAGE = "does not support polling"
+logger = logging.getLogger(__name__)
 
 
 class PluginModelClient(BasePluginClient):
@@ -611,9 +614,24 @@ class PluginModelClient(BasePluginClient):
         )
 
         try:
+            resolved_mime_type: str | None = None
             for result in response:
                 hex_str = result.result
-                yield TTSAudioChunk(binascii.unhexlify(hex_str), mime_type=result.mime_type)
+                audio = binascii.unhexlify(hex_str)
+                detected_mime_type = sniff_audio_mime_type(audio)
+                reported_mime_type = normalize_audio_mime_type(result.mime_type)
+                if detected_mime_type:
+                    # Keep the first detected format for continuation chunks.
+                    # Arbitrary PCM bytes later in a WAV stream can resemble an
+                    # MP3/AAC frame header by chance.
+                    resolved_mime_type = resolved_mime_type or detected_mime_type
+                    if reported_mime_type and reported_mime_type != detected_mime_type:
+                        logger.warning(
+                            "TTS plugin reported MIME %s but returned %s audio; using detected type",
+                            reported_mime_type,
+                            detected_mime_type,
+                        )
+                yield TTSAudioChunk(audio, mime_type=resolved_mime_type or result.mime_type)
         except PluginDaemonInnerError as e:
             raise ValueError(e.message + str(e.code))
 

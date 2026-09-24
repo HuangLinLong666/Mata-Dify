@@ -199,6 +199,26 @@ class TestAppGeneratorTTSPublisher:
 
         mock_model_instance.invoke_tts.assert_called_once_with(content_text="Hello. World.", voice="voice1")
 
+    def test_runtime_waits_for_terminal_for_tongyi_qwen3_tts(self, mock_model_manager, mock_model_instance: MagicMock):
+        mock_model_instance.provider = "langgenius/tongyi/tongyi"
+        mock_model_instance.model_name = "qwen3-tts-flash"
+        publisher = AppGeneratorTTSPublisher("tenant", "voice1")
+        event = _text_event("Hello. World.")
+        messages = iter([event, None])
+
+        def get_message():
+            message = next(messages)
+            if message is None:
+                mock_model_instance.invoke_tts.assert_not_called()
+            return message
+
+        publisher._msg_queue = MagicMock()
+        publisher._msg_queue.get.side_effect = get_message
+
+        publisher._runtime()
+
+        mock_model_instance.invoke_tts.assert_called_once_with(content_text="Hello. World.", voice="voice1")
+
     def test_runtime_rejects_a_non_mp3_incremental_response_before_emitting_audio(
         self, mock_model_manager, mock_model_instance: MagicMock
     ):

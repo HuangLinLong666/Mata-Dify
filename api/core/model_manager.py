@@ -5,6 +5,7 @@ from typing import IO, Any, Literal, Optional, ParamSpec, TypeVar, Union, cast, 
 from uuid import UUID
 
 from configs import dify_config
+from core.base.tts_compatibility import is_tongyi_wav_model, split_tts_text
 from core.credit_usage import (
     CreditUsageAppType,
     CreditUsageAppTypeInput,
@@ -417,6 +418,12 @@ class ModelInstance:
         """
         if not isinstance(self.model_type_instance, TTSModel):
             raise Exception("Model type instance is not TTSModel")
+        if is_tongyi_wav_model(self.provider, self.model_name):
+            return self._invoke_tongyi_tts_chunks(
+                content_text=content_text,
+                voice=voice,
+                request_metadata=request_metadata,
+            )
         return self._round_robin_invoke(
             self.model_type_instance.invoke,
             model=self.model_name,
@@ -425,6 +432,30 @@ class ModelInstance:
             voice=voice,
             request_metadata=self._resolve_request_metadata(request_metadata),
         )
+
+    def _invoke_tongyi_tts_chunks(
+        self,
+        *,
+        content_text: str,
+        voice: str,
+        request_metadata: Mapping[str, object] | None,
+    ) -> Generator[bytes, None, None]:
+        """Keep Tongyi requests below the plugin's unreliable internal split path."""
+        effective_request_metadata = self._resolve_request_metadata(request_metadata)
+        text_chunks = split_tts_text(content_text)
+        if not text_chunks:
+            return
+
+        for text_chunk in text_chunks:
+            response = self._round_robin_invoke(
+                self.model_type_instance.invoke,
+                model=self.model_name,
+                credentials=self.credentials,
+                content_text=text_chunk,
+                voice=voice,
+                request_metadata=effective_request_metadata,
+            )
+            yield from response
 
     def _round_robin_invoke(self, function: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         """

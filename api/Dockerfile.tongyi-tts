@@ -1,0 +1,10 @@
+# Keep this base tag aligned with docker/docker-compose.yaml.
+FROM langgenius/dify-api:1.17.0
+
+# Overlay only the API-side Tongyi/WAV compatibility implementation. This
+# avoids rebuilding Dify's complete Python environment for a small hotfix.
+COPY --chown=dify:dify api/core/base/tts_audio_format.py /app/api/core/base/tts_audio_format.py
+COPY --chown=dify:dify api/core/base/tts_compatibility.py /app/api/core/base/tts_compatibility.py
+COPY --chown=dify:dify api/core/base/tts/audio_mime.py /app/api/core/base/tts/audio_mime.py
+COPY --chown=dify:dify api/core/model_manager.py /app/api/core/model_manager.py
+COPY --chown=dify:dify api/core/plugin/impl/model.py /app/api/core/plugin/impl/model.py
